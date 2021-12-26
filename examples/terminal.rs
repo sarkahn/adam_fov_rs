@@ -1,4 +1,4 @@
-use bevy::{prelude::*, render::camera::Camera, input::mouse::{MouseScrollUnit, MouseWheel}};
+use bevy::{prelude::*, render::camera::Camera, input::mouse::{MouseWheel}};
 use bevy_tiled_camera::*;
 use bevy_ascii_terminal::*;
 use adam_fov_rs::*;

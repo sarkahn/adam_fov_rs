@@ -1,8 +1,37 @@
+//! [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+//! [![Crates.io](https://img.shields.io/crates/v/adam_fov_rs)](https://crates.io/crates/adam_fov_rs)
+//! [![docs](https://docs.rs/adam_fov_rs/badge.svg)](https://docs.rs/adam_fov_rs/)
 //! 
+//! An implementation of [Adam Millazo's FOV algorithm](http://www.adammil.net/blog/v125_Roguelike_Vision_Algorithms.html#mine)
 //! 
-//! An implementation of Adam Millazo's FOV algorithm from http://www.adammil.net/blog/v125_Roguelike_Vision_Algorithms.html#mine
+//! To use it you must implement the [VisiblityMap] trait on your map type. Then you can call [fov::compute] with your map
+//! which will populate visible tiles based on the map's opaque tiles.
+//! 
+//! # Example
+//! ```rust
+//! use adam_fov_rs::{VisiblityMap, fov};
+//! use glam::IVec2;
+//! 
+//! struct Map {
+//!     visible: Vec<Vec<bool>>,
+//!     opaque: Vec<Vec<bool>>,
+//!     size: IVec2,
+//! }
+//! 
+//! impl VisiblityMap for Map {
+//!     fn is_opaque(&self, p: IVec2) -> bool { self.opaque[p.x as usize][p.y as usize] }
+//!     fn is_in_bounds(&self, p: IVec2) -> bool { p.cmpge(IVec2::ZERO).all() && p.cmplt(self.size).all() }
+//!     fn set_visible(&mut self, p: IVec2) { self.visible[p.x as usize][p.y as usize] = true; }
+//!     fn dist(&self, a: IVec2, b: IVec2) -> f32 { a.as_f32().distance(b.as_f32()) }
+//! }
+//! 
+//! fn calc_fov(map: &mut Map, p: IVec2) {
+//!     fov::compute(p, 5, map);
+//! }
+//! ```
 use glam::IVec2;
 
+/// A trait used by the fov algorithm to calculate the resulting fov.
 pub trait VisiblityMap
 {
     fn is_opaque(&self, p: IVec2) -> bool;
@@ -11,11 +40,13 @@ pub trait VisiblityMap
     fn dist(&self, a: IVec2, b: IVec2) -> f32;
 }
 
+/// Module containing the compute function.
 pub mod fov {
     use glam::IVec2;
 
     use crate::VisiblityMap;
 
+    /// Compute the fov in a map from the given position.
     pub fn compute<T: VisiblityMap>(origin: IVec2, range: i32, map: &mut T) {
         map.set_visible(origin);
 
@@ -33,12 +64,12 @@ pub mod fov {
         octant: i32, 
         origin: IVec2, 
         range: i32, 
-        mut x: i32, 
+        x: i32, 
         mut top: Slope, 
         mut bottom: Slope, 
         map: &mut T
     ) {
-        for _ in x..= range {
+        for x in x..= range {
             let y_coords = compute_y_coordinate(octant, origin, x, map,
                 &mut top, &mut bottom);
             
@@ -48,7 +79,6 @@ pub mod fov {
             if !compute_visiblity(top_y, bottom_y, range, octant, origin, x, map, &mut top, &mut bottom) {
                 break;
             }
-            x += 1;
         }
     }
     
@@ -94,6 +124,7 @@ pub mod fov {
         IVec2::new(top_y, bottom_y)
     }
     
+    #[allow(clippy::too_many_arguments)]
     fn compute_visiblity<T: VisiblityMap>(
         top_y: i32, bottom_y: i32,
         range: i32, octant: i32, origin: IVec2, x: i32, map: &mut T,
@@ -140,10 +171,8 @@ pub mod fov {
                                 else {
                                     compute_octant(octant, origin, range, x + 1, top.clone(), Slope { y: ny, x: nx }, map);
                                 }
-                            } else {
-                                if y == bottom_y {
-                                    return false;
-                                }
+                            } else if y == bottom_y {
+                                return false;
                             }
                         }
                         was_opaque = 1;
@@ -165,7 +194,7 @@ pub mod fov {
             }
         }
     
-        !(was_opaque != 0)
+        was_opaque == 0
     }
     
     fn blocks_light<T: VisiblityMap>(x: i32, y: i32, octant: i32, origin: IVec2, map: &mut T) -> bool {
@@ -228,6 +257,7 @@ pub mod fov {
         //pub fn less(&self, y: i32, x: i32) -> bool { 
         //    self.y * x < self.x * y 
         //} 
+
         pub fn less_or_equal(&self, y: i32, x: i32) -> bool { 
             self.y *x <= self.x *y
         } // this <= y/x
