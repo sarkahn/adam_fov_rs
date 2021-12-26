@@ -1,15 +1,14 @@
 [package]
 name = "adam_fov_rs"
 description = "A rust implementation of Adam Milazzo's FOV algorithm http://www.adammil.net/blog/v125_Roguelike_Vision_Algorithms.html#mine"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2021"
 authors = ["sark", "Adam Milazzo"]
 homepage = "https://github.com/sarkahn/adam_fov_rs"
 repository = "https://github.com/sarkahn/adam_fov_rs"
 license = "MIT"
 readme = "README.md"
-keywords = ["fov", "field-of-view"]
-exclude = ["images/*"]
+keywords = ["fov", "field-of-view", "roguelike", "2d"]
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 

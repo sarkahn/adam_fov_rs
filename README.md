@@ -8,7 +8,7 @@ An implementation of [Adam Millazo's FOV algorithm](http://www.adammil.net/blog/
 
 *Taken from the "terminal" example*
 
-To use it you must implement the [VisibilityMap] trait on your map type. Then you can call `fov::compute` with your map
+To use it you must implement the `VisibilityMap` trait on your map type. Then you can call `fov::compute` with your map
 which will populate visible tiles based on the map's opaque tiles.
 
 # Example
