@@ -176,7 +176,7 @@ impl Map {
     }
 }
 
-impl VisiblityMap for Map {
+impl VisibilityMap for Map {
     fn is_opaque(&self, p: IVec2) -> bool {
         if !self.is_in_bounds(p) {
             return true;

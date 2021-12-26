@@ -8,12 +8,12 @@ An implementation of [Adam Millazo's FOV algorithm](http://www.adammil.net/blog/
 
 *Taken from the "terminal" example*
 
-To use it you must implement the `VisiblityMap` trait on your map type. Then you can call `fov::compute` with your map
+To use it you must implement the [VisibilityMap] trait on your map type. Then you can call `fov::compute` with your map
 which will populate visible tiles based on the map's opaque tiles.
 
 # Example
 ```rust
-use adam_fov_rs::{VisiblityMap, fov};
+use adam_fov_rs::{VisibilityMap, fov};
 use glam::IVec2;
 
 struct Map {
@@ -22,7 +22,7 @@ struct Map {
     size: IVec2,
 }
 
-impl VisiblityMap for Map {
+impl VisibilityMap for Map {
     fn is_opaque(&self, p: IVec2) -> bool { self.opaque[p.x as usize][p.y as usize] }
     fn is_in_bounds(&self, p: IVec2) -> bool { p.cmpge(IVec2::ZERO).all() && p.cmplt(self.size).all() }
     fn set_visible(&mut self, p: IVec2) { self.visible[p.x as usize][p.y as usize] = true; }

@@ -9,7 +9,7 @@
 //! 
 //! # Example
 //! ```rust
-//! use adam_fov_rs::{VisiblityMap, fov};
+//! use adam_fov_rs::{VisibilityMap, fov};
 //! use glam::IVec2;
 //! 
 //! struct Map {
@@ -18,7 +18,7 @@
 //!     size: IVec2,
 //! }
 //! 
-//! impl VisiblityMap for Map {
+//! impl VisibilityMap for Map {
 //!     fn is_opaque(&self, p: IVec2) -> bool { self.opaque[p.x as usize][p.y as usize] }
 //!     fn is_in_bounds(&self, p: IVec2) -> bool { p.cmpge(IVec2::ZERO).all() && p.cmplt(self.size).all() }
 //!     fn set_visible(&mut self, p: IVec2) { self.visible[p.x as usize][p.y as usize] = true; }
@@ -32,7 +32,7 @@
 use glam::IVec2;
 
 /// A trait used by the fov algorithm to calculate the resulting fov.
-pub trait VisiblityMap
+pub trait VisibilityMap
 {
     fn is_opaque(&self, p: IVec2) -> bool;
     fn is_in_bounds(&self, p: IVec2) -> bool;
@@ -44,10 +44,10 @@ pub trait VisiblityMap
 pub mod fov {
     use glam::IVec2;
 
-    use crate::VisiblityMap;
+    use crate::VisibilityMap;
 
     /// Compute the fov in a map from the given position.
-    pub fn compute<T: VisiblityMap>(origin: IVec2, range: i32, map: &mut T) {
+    pub fn compute<T: VisibilityMap>(origin: IVec2, range: i32, map: &mut T) {
         map.set_visible(origin);
 
         for octant in 0..8 {
@@ -60,7 +60,7 @@ pub mod fov {
         }
     }
 
-    fn compute_octant<T: VisiblityMap>(
+    fn compute_octant<T: VisibilityMap>(
         octant: i32, 
         origin: IVec2, 
         range: i32, 
@@ -82,7 +82,7 @@ pub mod fov {
         }
     }
     
-    fn compute_y_coordinate<T: VisiblityMap>(
+    fn compute_y_coordinate<T: VisibilityMap>(
         octant: i32, origin: IVec2, x: i32, map: &mut T,
         top: &mut Slope, bottom: &mut Slope 
     ) -> IVec2 {
@@ -125,7 +125,7 @@ pub mod fov {
     }
     
     #[allow(clippy::too_many_arguments)]
-    fn compute_visiblity<T: VisiblityMap>(
+    fn compute_visiblity<T: VisibilityMap>(
         top_y: i32, bottom_y: i32,
         range: i32, octant: i32, origin: IVec2, x: i32, map: &mut T,
         top: &mut Slope, bottom: &mut Slope
@@ -197,7 +197,7 @@ pub mod fov {
         was_opaque == 0
     }
     
-    fn blocks_light<T: VisiblityMap>(x: i32, y: i32, octant: i32, origin: IVec2, map: &mut T) -> bool {
+    fn blocks_light<T: VisibilityMap>(x: i32, y: i32, octant: i32, origin: IVec2, map: &mut T) -> bool {
         let (mut nx,mut ny) = origin.into();
         match octant {
             0 => { nx += x; ny -= y; },
@@ -217,7 +217,7 @@ pub mod fov {
         map.is_opaque(IVec2::new(nx,ny))
     }
     
-    fn set_visible<T: VisiblityMap>(x: i32, y: i32, octant: i32, origin: IVec2, map: &mut T) {
+    fn set_visible<T: VisibilityMap>(x: i32, y: i32, octant: i32, origin: IVec2, map: &mut T) {
         let (mut nx,mut ny) = origin.into();
         match octant {
             0 => { nx += x; ny -= y; },
@@ -270,7 +270,7 @@ pub mod fov {
 mod test {
     use glam::{IVec2, Vec2};
 
-    use crate::{VisiblityMap, fov};
+    use crate::{VisibilityMap, fov};
 
     struct Map {
         visible_points: Vec<bool>,
@@ -295,7 +295,7 @@ mod test {
         }
     }
 
-    impl VisiblityMap for Map {
+    impl VisibilityMap for Map {
         fn is_opaque(&self, p: IVec2) -> bool {
             self.opaque_points[self.to_index(p)]
         }
