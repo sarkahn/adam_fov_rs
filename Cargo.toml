@@ -1,0 +1,20 @@
+[package]
+name = "adam_fov_rs"
+description = "A rust implementation of Adam Milazzo's FOV algorithm http://www.adammil.net/blog/v125_Roguelike_Vision_Algorithms.html#mine"
+version = "0.1.0"
+edition = "2021"
+authors = ["sark", "Adam Milazzo"]
+#homepage = "https://github.com/sarkahn/bevy_ascii_terminal"
+#repository = "https://github.com/sarkahn/bevy_ascii_terminal"
+license = "MIT"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+glam = { version = "0.13.0" }
+
+[dev-dependencies]
+bevy = {version = "0.5", default-features = false, features = ["png", "bevy_winit", "bevy_wgpu"]}
+bevy_ascii_terminal = "0.7.4"
+bevy_tiled_camera = "0.2.4"
+rand = "0.8.4"
