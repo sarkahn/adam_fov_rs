@@ -4,9 +4,12 @@ description = "A rust implementation of Adam Milazzo's FOV algorithm http://www.
 version = "0.1.0"
 edition = "2021"
 authors = ["sark", "Adam Milazzo"]
-#homepage = "https://github.com/sarkahn/bevy_ascii_terminal"
-#repository = "https://github.com/sarkahn/bevy_ascii_terminal"
+homepage = "https://github.com/sarkahn/adam_fov_rs"
+repository = "https://github.com/sarkahn/adam_fov_rs"
 license = "MIT"
+readme = "README.md"
+keywords = ["fov", "field-of-view"]
+exclude = ["images/*"]
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
