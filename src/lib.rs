@@ -22,7 +22,7 @@
 //!     fn is_opaque(&self, p: IVec2) -> bool { self.opaque[p.x as usize][p.y as usize] }
 //!     fn is_in_bounds(&self, p: IVec2) -> bool { p.cmpge(IVec2::ZERO).all() && p.cmplt(self.size).all() }
 //!     fn set_visible(&mut self, p: IVec2) { self.visible[p.x as usize][p.y as usize] = true; }
-//!     fn dist(&self, a: IVec2, b: IVec2) -> f32 { a.as_f32().distance(b.as_f32()) }
+//!     fn dist(&self, a: IVec2, b: IVec2) -> f32 { a.as_vec2().distance(b.as_vec2()) }
 //! }
 //!
 //! fn calc_fov(map: &mut Map, p: IVec2) {
@@ -390,7 +390,7 @@ mod test {
         }
 
         fn dist(&self, a: IVec2, b: IVec2) -> f32 {
-            Vec2::distance(a.as_f32(), b.as_f32())
+            Vec2::distance(a.as_vec2(), b.as_vec2())
         }
     }
 

@@ -5,7 +5,7 @@ use bevy_tiled_camera::*;
 use rand::Rng;
 
 fn main() {
-    App::build()
+    App::new()
         .add_plugins(DefaultPlugins)
         .add_plugin(TiledCameraPlugin)
         .add_plugin(TerminalPlugin)
@@ -18,7 +18,7 @@ fn main() {
 }
 
 fn setup(mut commands: Commands) {
-    let size = (30, 30);
+    let size = [35, 35];
     commands.spawn_bundle(TerminalBundle::new().with_size(size));
 
     commands.spawn_bundle(TiledCameraBundle::new().with_tile_count(size));
@@ -49,9 +49,9 @@ fn update_cursor_pos(
 ) {
     let window = windows.get_primary().unwrap();
     if let Some(pos) = window.cursor_position() {
-        let (cam, t) = q_cam.single().unwrap();
+        let (cam, t) = q_cam.single();
         if let Some(pos) = screen_to_world(cam, &windows, t, pos) {
-            let pos = pos.truncate().floor().as_i32();
+            let pos = pos.truncate().round().as_ivec2();
             // println!("Cursor world position: {}", pos);
             if cursor_pos.0 != pos || view_range.is_changed() {
                 cursor_pos.0 = pos;
@@ -88,27 +88,29 @@ fn update_view_range(mut view_range: ResMut<ViewRange>, mut scroll_event: EventR
 
 fn update_terminal_from_map(map: Res<Map>, mut q_term: Query<&mut Terminal>) {
     if map.is_changed() {
-        let mut term = q_term.single_mut().unwrap();
+        let mut term = q_term.single_mut();
 
         term.clear();
 
+        let wall = CharFormat::new(Color::GREEN, Color::BLACK);
+        let floor = CharFormat::new(Color::WHITE, Color::BLACK); 
         for x in 0..term.width() as i32 {
             for y in 0..term.height() as i32 {
                 if map.is_visible(x, y) {
                     let p = IVec2::new(x, y);
                     if map.is_opaque(p) {
-                        let y = (term.height() - 1) as i32 - y;
-                        term.put_char_color((x, y), '#', GREEN, BLACK);
+                        //let y = (term.height() - 1) as i32 - y;
+                        term.put_char_formatted([x, y], '#', wall);
                     } else {
-                        let y = (term.height() - 1) as i32 - y;
-                        term.put_char_color((x, y), '.', WHITE, BLACK);
+                        //let y = (term.height() - 1) as i32 - y;
+                        term.put_char_formatted([x, y], '.', floor);
                     }
                 }
             }
         }
 
-        term.put_string_color((0, 0), "Click to toggle wall", WHITE, BLACK);
-        term.put_string_color((0, 1), "Scroll to change view range", WHITE, BLACK);
+        term.put_string([0, 0], "Click to toggle wall");
+        term.put_string([0, 1], "Scroll to change view range");
     }
 }
 
@@ -128,8 +130,8 @@ struct Map {
 }
 
 impl Map {
-    fn new(size: (u32, u32)) -> Self {
-        let (w, h) = size;
+    fn new(size: [u32;2]) -> Self {
+        let [w, h] = size;
         let len = (w * h) as usize;
         Map {
             visible_points: vec![false; len],
@@ -183,7 +185,7 @@ impl VisibilityMap for Map {
     }
 
     fn dist(&self, a: IVec2, b: IVec2) -> f32 {
-        Vec2::distance(a.as_f32(), b.as_f32())
+        Vec2::distance(a.as_vec2(), b.as_vec2())
     }
 }
 
