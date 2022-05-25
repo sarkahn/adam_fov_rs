@@ -9,11 +9,11 @@ fn main() {
         .add_plugins(DefaultPlugins)
         .add_plugin(TiledCameraPlugin)
         .add_plugin(TerminalPlugin)
-        .add_startup_system(setup.system())
-        .add_system(toggle_walls.system())
-        .add_system(update_cursor_pos.system())
-        .add_system(update_view_range.system())
-        .add_system(update_terminal_from_map.system())
+        .add_startup_system(setup)
+        .add_system(toggle_walls)
+        .add_system(update_cursor_pos)
+        .add_system(update_view_range)
+        .add_system(update_terminal_from_map)
         .run();
 }
 
@@ -43,14 +43,15 @@ fn place_walls(map: &mut Map) {
 fn update_cursor_pos(
     mut cursor_pos: ResMut<CursorPos>,
     windows: Res<Windows>,
-    q_cam: Query<(&Camera, &GlobalTransform)>,
+    q_cam: Query<(&Camera, &GlobalTransform, &TiledProjection)>,
     mut map: ResMut<Map>,
     view_range: Res<ViewRange>,
 ) {
     let window = windows.get_primary().unwrap();
     if let Some(pos) = window.cursor_position() {
-        let (cam, t) = q_cam.single();
-        if let Some(pos) = screen_to_world(cam, &windows, t, pos) {
+        let (cam, t, proj) = q_cam.single();
+
+        if let Some(pos) = proj.screen_to_world(cam, &windows, t, pos) {
             let pos = pos.truncate().round().as_ivec2();
             // println!("Cursor world position: {}", pos);
             if cursor_pos.0 != pos || view_range.is_changed() {
@@ -192,31 +193,3 @@ impl VisibilityMap for Map {
 #[derive(Default)]
 struct CursorPos(IVec2);
 
-/// Converts a screen position [0..resolution] to a world position
-pub fn screen_to_world(
-    camera: &Camera,
-    windows: &Windows,
-    camera_transform: &GlobalTransform,
-    screen_pos: Vec2,
-) -> Option<Vec3> {
-    let window = windows.get(camera.window)?;
-    let window_size = Vec2::new(window.width(), window.height());
-
-    // Convert screen position [0..resolution] to ndc [-1..1]
-    let ndc = (screen_pos / window_size) * 2.0 - Vec2::ONE;
-
-    let min = -Vec2::ONE;
-    let max = Vec2::ONE;
-    let below_min = !ndc.cmpge(min);
-    let above_max = !ndc.cmplt(max);
-    if below_min.any() || above_max.any() {
-        return None;
-    }
-
-    let ndc_to_world = camera_transform.compute_matrix() * camera.projection_matrix.inverse();
-
-    let world_pos = ndc_to_world.project_point3(ndc.extend(-1.0));
-    let world_pos = world_pos.truncate().extend(0.0);
-
-    Some(world_pos)
-}
