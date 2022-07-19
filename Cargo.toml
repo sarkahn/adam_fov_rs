@@ -1,7 +1,7 @@
 [package]
 name = "adam_fov_rs"
 description = "A rust implementation of Adam Milazzo's FOV algorithm http://www.adammil.net/blog/v125_Roguelike_Vision_Algorithms.html#mine"
-version = "0.1.4"
+version = "0.2.0"
 edition = "2021"
 authors = ["sark", "Adam Milazzo"]
 homepage = "https://github.com/sarkahn/adam_fov_rs"
@@ -11,10 +11,10 @@ readme = "README.md"
 keywords = ["fov", "field-of-view", "roguelike", "2d"]
 
 [dependencies]
-glam = { version = "0.20.0" }
+glam = { version = "0.21" }
+sark_grids = {path="../sark_grids_rs", version="0.5"}
 
 [dev-dependencies]
-bevy = {version = "0.7", default-features = false, features = ["png", "bevy_winit", "render"]}
-bevy_ascii_terminal = "0.9.1"
-bevy_tiled_camera = "0.3.1"
+bevy = {path="../bevy", version = "0.8.0-dev", default-features = false, features = ["png", "bevy_winit", "bevy_render", "bevy_core_pipeline", "bevy_sprite"]}
+bevy_ascii_terminal = {path="../bevy_ascii_terminal", version= "0.11"}
 rand = "0.8.4"
