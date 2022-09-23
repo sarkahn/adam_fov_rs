@@ -15,6 +15,6 @@ glam = { version = "0.21" }
 sark_grids = {path="../sark_grids_rs", version="0.5"}
 
 [dev-dependencies]
-bevy = {path="../bevy", version = "0.8.0-dev", default-features = false, features = ["png", "bevy_winit", "bevy_render", "bevy_core_pipeline", "bevy_sprite"]}
-bevy_ascii_terminal = {path="../bevy_ascii_terminal", version= "0.11"}
+bevy = {path="../bevy", version = "0.8", default-features = false, features = ["png", "bevy_winit", "bevy_render", "bevy_core_pipeline", "bevy_sprite"]}
+bevy_ascii_terminal = {path="../bevy_ascii_terminal", version= "0.11.4"}
 rand = "0.8.4"
