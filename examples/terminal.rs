@@ -1,87 +1,73 @@
 use adam_fov_rs::*;
 use bevy::{input::mouse::MouseWheel, prelude::*};
-use bevy_ascii_terminal::{prelude::*, ToWorld};
+use bevy_ascii_terminal::*;
 use rand::Rng;
+use sark_grids::SizedGrid;
+
+#[derive(Resource)]
+struct ViewRange(i32);
+
+#[derive(Resource, Deref, DerefMut)]
+pub struct Visibility(VisibilityMap);
 
 fn main() {
     App::new()
-        .add_plugins(DefaultPlugins)
-        .add_plugin(TerminalPlugin)
-        .add_startup_system(setup)
-        .add_system(toggle_walls)
-        .add_system(update_cursor_pos)
-        .add_system(update_view_range)
-        .add_system(update_terminal_from_map)
+        .add_plugins((DefaultPlugins, TerminalPlugins))
+        .add_systems(Startup, setup)
+        .add_systems(
+            Update,
+            (
+                toggle_walls,
+                update_view_range,
+                update_vision,
+                update_terminal_from_map.run_if(resource_changed::<Visibility>),
+            ),
+        )
         .run();
 }
 
 fn setup(mut commands: Commands) {
     let size = [35, 35];
-    commands
-        .spawn_bundle(TerminalBundle::new().with_size(size))
-        .insert(AutoCamera)
-        .insert(ToWorld::default());
+    commands.spawn(Terminal::new(size));
+    commands.spawn(TerminalCamera::new());
 
-    let mut map = VisibilityMap2d::default(size);
+    let mut map = Visibility(VisibilityMap::new(size));
     place_walls(&mut map);
     commands.insert_resource(map);
 
-    commands.insert_resource(CursorPos::default());
     commands.insert_resource(ViewRange(5));
 }
 
-fn place_walls(map: &mut VisibilityMap2d) {
+fn place_walls(map: &mut VisibilityMap) {
     let mut rng = rand::thread_rng();
     for _ in 0..100 {
         let x = rng.gen_range(0..map.width());
         let y = rng.gen_range(0..map.height());
-        map[[x, y]].opaque = true;
+        map.add_blocker([x, y]);
     }
 }
 
-fn update_cursor_pos(
-    mut cursor_pos: ResMut<CursorPos>,
-    windows: Res<Windows>,
-    mut map: ResMut<VisibilityMap2d>,
-    view_range: Res<ViewRange>,
-    q_tw: Query<&ToWorld>,
+fn toggle_walls(
+    mut map: ResMut<Visibility>,
+    mouse: Res<ButtonInput<MouseButton>>,
+    q_cam: Query<&TerminalCamera>,
+    q_term: Query<&TerminalTransform>,
 ) {
-    if let Some(window) = windows.get_primary() {
-        if let Some(pos) = window.cursor_position() {
-            if let Ok(tw) = q_tw.get_single() {
-                if let Some(pos) = tw.screen_to_world(pos) {
-                    let pos = pos.round().as_ivec2();
-                    if cursor_pos.0 != pos || view_range.is_changed() {
-                        cursor_pos.0 = pos;
-                        map.clear_visible();
-                        let pos = map.world_to_grid(pos);
-                        fov::compute(pos, view_range.0, &mut *map);
-                    }
-                }
+    if mouse.just_pressed(MouseButton::Left) {
+        if let Some(p) = q_cam.single().cursor_world_pos() {
+            let Some(p) = q_term.single().world_to_tile(p) else {
+                return;
+            };
+            if map.in_bounds(p) {
+                map.toggle_blocker(p);
             }
         }
     }
 }
 
-fn toggle_walls(
-    mut map: ResMut<VisibilityMap2d>,
-    cursor_pos: Res<CursorPos>,
-    mouse: Res<Input<MouseButton>>,
-) {
-    if mouse.just_pressed(MouseButton::Left) {
-        let p = cursor_pos.0;
-        let p = map.world_to_grid(p);
-        if map.is_in_bounds(p) {
-            let p = &mut map[p].opaque;
-            *p = !*p;
-        }
-    }
-}
-
-struct ViewRange(i32);
 fn update_view_range(mut view_range: ResMut<ViewRange>, mut scroll_event: EventReader<MouseWheel>) {
-    for ev in scroll_event.iter() {
-        let delta = ev.y.ceil() as i32;
+    for ev in scroll_event.read() {
+        let delta = ev.y.round() as i32;
 
         if delta == 0 {
             return;
@@ -91,28 +77,38 @@ fn update_view_range(mut view_range: ResMut<ViewRange>, mut scroll_event: EventR
     }
 }
 
-fn update_terminal_from_map(map: Res<VisibilityMap2d>, mut q_term: Query<&mut Terminal>) {
-    if map.is_changed() {
-        let mut term = q_term.single_mut();
-
-        term.clear();
-
-        for x in 0..term.width() as i32 {
-            for y in 0..term.height() as i32 {
-                if map[[x, y]].visible {
-                    if map[[x, y]].opaque {
-                        term.put_char([x, y], '#'.fg(Color::GREEN));
-                    } else {
-                        term.put_char([x, y], '.'.fg(Color::WHITE));
-                    }
-                }
-            }
-        }
-
-        term.put_string([0, 0], "Click to toggle wall");
-        term.put_string([0, 1], "Scroll to change view range");
+fn update_vision(
+    mut visibility: ResMut<Visibility>,
+    range: Res<ViewRange>,
+    q_cam: Query<&TerminalCamera>,
+) {
+    let cam = q_cam.single();
+    visibility.clear_visibility();
+    let Some(cursor) = cam.cursor_world_pos() else {
+        return;
+    };
+    if visibility.in_bounds(cursor.as_ivec2()) {
+        visibility.compute(cursor.as_ivec2(), range.0);
     }
 }
 
-#[derive(Default)]
-struct CursorPos(IVec2);
+fn update_terminal_from_map(map: Res<Visibility>, mut q_term: Query<&mut Terminal>) {
+    let mut term = q_term.single_mut();
+
+    term.clear();
+
+    for x in 0..term.width() as i32 {
+        for y in 0..term.height() as i32 {
+            if map.is_visible([x, y]) {
+                if map.is_blocker([x, y]) {
+                    term.put_char([x, y], '#').fg(color::GREEN);
+                } else {
+                    term.put_char([x, y], '.').fg(color::WHITE);
+                }
+            }
+        }
+    }
+
+    term.put_string([0, 0], "Click to toggle wall".clear_colors());
+    term.put_string([0, 1], "Scroll to change view range".clear_colors());
+}
