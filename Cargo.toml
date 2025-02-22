@@ -1,7 +1,7 @@
 [package]
 name = "adam_fov_rs"
 description = "A rust implementation of Adam Milazzo's FOV algorithm http://www.adammil.net/blog/v125_Roguelike_Vision_Algorithms.html#mine"
-version = "0.2.0"
+version = "0.3.0"
 edition = "2021"
 authors = ["sark", "Adam Milazzo"]
 homepage = "https://github.com/sarkahn/adam_fov_rs"
