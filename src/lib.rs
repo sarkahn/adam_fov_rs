@@ -4,112 +4,270 @@
 //!
 //! An implementation of [Adam Millazo's FOV algorithm](http://www.adammil.net/blog/v125_Roguelike_Vision_Algorithms.html#mine)
 //!
+//! This crate provides a single function, `compute_fov`, which computes a field
+//! of view into a 2d grid from existing map data.
+//!
 //! # Example
+//!
 //! ```rust
 //! use adam_fov_rs::*;
 //!
-//! let mut map = VisibilityMap::new([50,50]);
+//! #[derive(Clone)]
+//! enum Tile {
+//!     Floor,
+//!     Wall,
+//! }
+//! let width = 50;
+//! let height = 50;
+//! let index = |p: IVec2| p.y as usize * width + p.x as usize;
 //!
-//! map.add_blocker([15,15]);
+//! let mut game_map = vec![Tile::Floor; width * height];
+//! // Add a vision blocker
+//! game_map[index(IVec2::new(15, 16))] = Tile::Wall;
 //!
-//! // Compute the field of view
-//! map.compute([15,14], 5);
+//! let mut vision = vec![false; width * height];
 //!
-//! // The space directly above our opaque tile is not visible
-//! assert!(map.is_visible([15,16]) == false);
+//! let is_opaque = |p| matches!(game_map[index(p)], Tile::Wall);
+//! let mark_visible = |p| {
+//!     let i = index(p);
+//!     vision[i] = true;
+//! };
+//!
+//! compute_fov([15, 15], 5, [width, height], is_opaque, mark_visible);
+//!
+//! let is_visible = |p| vision[index(p)];
+//! assert!(!is_visible(IVec2::new(15, 17)));
+//! assert!(is_visible(IVec2::new(17, 15)));
 //! ```
 //!
 //! *Taken from the terminal example*
 //! ![](images/fov.gif)
 
-use glam::{IVec2, Vec2};
-use sark_grids::{BitGrid, GridPoint, GridSize, SizedGrid};
+pub use glam::IVec2;
+pub use sark_grids::{GridPoint, GridSize};
 
-/// A visibility map that can be used to compute a field of view on a 2d grid.
+/// Compute a field of view into a 2d grid from existing map data.
+///
+/// This algorithm assumes your map is a a 2d grid of tiles where each tile can
+/// be either transparent or opaque.
+///
+/// Note that the map data that defines which tiles are opaque is assumed to be
+/// seperate from the visibility data which describes a view into that map.
+///
+/// # Arguments
+///
+/// * `origin` and `range` - Define the circular area of the grid that will be used
+///   to calculate the field of view.
+///
+/// * `grid_size` - Used for bounds checking during fov calculation.
+///
+/// * `tile_blocks_vision` - A callback which should return true if the tile at a
+///   given map position is opaque, meaning it blocks vision.
+///
+/// * `mark_tile_visible` - A callback that will be called during fov calculation
+///   to notify the caller that a map tile is visible. This might be called
+///   multiple times for the same tile.
 ///
 /// # Example
+///
 /// ```rust
 /// use adam_fov_rs::*;
 ///
-/// let mut map = VisibilityMap::new([50,50]);
+/// #[derive(Clone)]
+/// enum Tile {
+///     Floor,
+///     Wall,
+/// }
+/// let width = 50;
+/// let height = 50;
+/// let index = |p: IVec2| p.y as usize * width + p.x as usize;
 ///
-/// map.add_blocker([15,15]);
-/// map.compute([15,14], 5);
+/// let mut game_map = vec![Tile::Floor; width * height];
+/// // Add a vision blocker
+/// game_map[index(IVec2::new(15, 16))] = Tile::Wall;
 ///
-/// // The space behind the vision blocker is not visible
-/// assert!(map.is_visible([15,16]) == false);
+/// // Describes which map tiles are visible or not
+/// let mut vision = vec![false; width * height];
+///
+/// let is_opaque = |p| matches!(game_map[index(p)], Tile::Wall);
+/// let mark_as_visible = |p| {
+///     let i = index(p);
+///     vision[i] = true;
+/// };
+///
+/// compute_fov([15, 15], 5, [width, height], is_opaque, mark_as_visible);
+///
+/// let is_visible = |p| vision[index(p)];
+/// assert!(!is_visible(IVec2::new(15, 17)));
+/// assert!(is_visible(IVec2::new(17, 15)));
 /// ```
-pub struct VisibilityMap {
-    visible: BitGrid,
-    vision_blocker: BitGrid,
-}
+pub fn compute_fov(
+    origin: impl GridPoint,
+    range: usize,
+    max_bounds: impl GridSize + Copy, // TODO: Gridsize should implement Copy
+    tile_blocks_vision: impl Fn(IVec2) -> bool,
+    mut mark_tile_visible: impl FnMut(IVec2),
+) {
+    let origin = origin.to_ivec2();
+    mark_tile_visible(origin);
 
-impl SizedGrid for VisibilityMap {
-    fn size(&self) -> glam::UVec2 {
-        self.visible.size()
+    for octant in 0..8 {
+        compute_octant(
+            octant,
+            origin,
+            range as i32,
+            1,
+            Slope { x: 1, y: 1 },
+            Slope { x: 1, y: 0 },
+            max_bounds,
+            &tile_blocks_vision,
+            &mut mark_tile_visible,
+        )
     }
 }
 
-impl VisibilityMap {
-    pub fn new(size: impl GridSize) -> Self {
-        Self {
-            visible: BitGrid::new(size.to_uvec2()),
-            vision_blocker: BitGrid::new(size),
+#[allow(clippy::too_many_arguments)]
+fn compute_octant(
+    octant: i32,
+    origin: IVec2,
+    range: i32,
+    x: i32,
+    mut top: Slope,
+    mut bottom: Slope,
+    grid_size: impl GridSize + Copy,
+    is_opaque: &impl Fn(IVec2) -> bool,
+    mark_tile_visible: &mut impl FnMut(IVec2),
+) {
+    for x in x..=range {
+        let y_coords = compute_y_coordinate(
+            octant,
+            origin,
+            x,
+            &mut top,
+            &mut bottom,
+            grid_size,
+            is_opaque,
+        );
+
+        let top_y = y_coords.x;
+        let bottom_y = y_coords.y;
+
+        if !compute_visiblity(
+            top_y,
+            bottom_y,
+            range,
+            octant,
+            origin,
+            x,
+            &mut top,
+            &mut bottom,
+            grid_size,
+            is_opaque,
+            mark_tile_visible,
+        ) {
+            break;
+        }
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn compute_y_coordinate(
+    octant: i32,
+    origin: IVec2,
+    x: i32,
+    top: &mut Slope,
+    bottom: &mut Slope,
+    grid_size: impl GridSize + Copy,
+    is_opaque: &impl Fn(IVec2) -> bool,
+) -> IVec2 {
+    let mut top_y;
+    if top.x == 1 {
+        top_y = x;
+    } else {
+        top_y = ((x * 2 - 1) * top.y + top.x) / (top.x * 2);
+
+        if blocks_light(x, top_y, octant, origin, grid_size, is_opaque) {
+            if top.greater_or_equal(top_y * 2 + 1, x * 2)
+                && !blocks_light(x, top_y + 1, octant, origin, grid_size, is_opaque)
+            {
+                top_y += 1;
+            }
+        } else {
+            let mut ax = x * 2;
+            if blocks_light(x + 1, top_y + 1, octant, origin, grid_size, is_opaque) {
+                ax += 1;
+            }
+            if top.greater(top_y * 2 + 1, ax) {
+                top_y += 1;
+            }
         }
     }
 
-    pub fn is_blocker(&self, p: impl GridPoint) -> bool {
-        self.vision_blocker.get(p)
-    }
+    let mut bottom_y;
+    if bottom.y == 0 {
+        bottom_y = 0;
+    } else {
+        bottom_y = ((x * 2 - 1) * bottom.y + bottom.x) / (bottom.x * 2);
 
-    /// Check if a tile is visible within this FOV. This is only valid after
-    /// calling `compute`
-    pub fn is_visible(&self, p: impl GridPoint) -> bool {
-        self.visible.get(p)
-    }
-
-    pub fn add_blocker(&mut self, p: impl GridPoint) {
-        self.vision_blocker.set(p, true);
-    }
-
-    pub fn remove_blocker(&mut self, p: impl GridPoint) {
-        self.vision_blocker.set(p, false);
-    }
-
-    pub fn toggle_blocker(&mut self, p: impl GridPoint) {
-        self.vision_blocker.toggle(p);
-    }
-
-    pub fn set_blocker(&mut self, p: impl GridPoint, blocks_vision: bool) {
-        self.vision_blocker.set(p, blocks_vision);
-    }
-
-    /// Reset previously computed visibility
-    pub fn clear_visibility(&mut self) {
-        self.visible.clear();
-    }
-
-    pub fn clear_blockers(&mut self) {
-        self.vision_blocker.clear();
-    }
-
-    /// Compute the FOV
-    pub fn compute(&mut self, p: impl GridPoint, range: i32) {
-        let origin = p.to_ivec2();
-        self.visible.set(origin, true);
-
-        for octant in 0..8 {
-            compute_octant(
-                octant,
-                origin,
-                range,
-                1,
-                Slope { x: 1, y: 1 },
-                Slope { x: 1, y: 0 },
-                self,
-            )
+        if bottom.greater_or_equal(bottom_y * 2 + 1, x * 2)
+            && blocks_light(x, bottom_y, octant, origin, grid_size, is_opaque)
+            && !blocks_light(x, bottom_y + 1, octant, origin, grid_size, is_opaque)
+        {
+            bottom_y += 1;
         }
     }
+    IVec2::new(top_y, bottom_y)
+}
+
+fn blocks_light(
+    x: i32,
+    y: i32,
+    octant: i32,
+    origin: IVec2,
+    grid_size: impl GridSize,
+    is_opaque: &impl Fn(IVec2) -> bool,
+) -> bool {
+    let (mut nx, mut ny) = origin.into();
+    match octant {
+        0 => {
+            nx += x;
+            ny -= y;
+        }
+        1 => {
+            nx += y;
+            ny -= x;
+        }
+        2 => {
+            nx -= y;
+            ny -= x;
+        }
+        3 => {
+            nx -= x;
+            ny -= y;
+        }
+        4 => {
+            nx -= x;
+            ny += y;
+        }
+        5 => {
+            nx -= y;
+            ny += x;
+        }
+        6 => {
+            nx += y;
+            ny += x;
+        }
+        7 => {
+            nx += x;
+            ny += y;
+        }
+        _ => {}
+    }
+    let p = IVec2::new(nx, ny);
+    if !grid_size.contains_point(p) {
+        return true;
+    }
+    is_opaque(IVec2::new(nx, ny))
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -120,15 +278,17 @@ fn compute_visiblity(
     octant: i32,
     origin: IVec2,
     x: i32,
-    map: &mut VisibilityMap,
     top: &mut Slope,
     bottom: &mut Slope,
+    grid_size: impl GridSize + Copy,
+    is_tile_opaque: &impl Fn(IVec2) -> bool,
+    mark_tile_visible: &mut impl FnMut(IVec2),
 ) -> bool {
     let mut was_opaque = -1;
 
     for y in (bottom_y..=top_y).rev() {
-        if range < 0 || Vec2::ZERO.distance(IVec2::new(x, y).as_vec2()) <= range as f32 {
-            let is_opaque = blocks_light(x, y, octant, origin, map);
+        if range < 0 || glam::Vec2::ZERO.distance(IVec2::new(x, y).as_vec2()) <= range as f32 {
+            let is_opaque = blocks_light(x, y, octant, origin, grid_size, is_tile_opaque);
 
             // Less symmetrical
             // let is_visible = is_opaque ||
@@ -145,7 +305,7 @@ fn compute_visiblity(
                 );
 
             if is_visible {
-                set_visible(x, y, octant, origin, map);
+                set_visible(x, y, octant, origin, grid_size, mark_tile_visible);
             }
 
             if x != range {
@@ -153,7 +313,7 @@ fn compute_visiblity(
                     if was_opaque == 0 {
                         let mut nx = x * 2;
                         let ny = y * 2 + 1;
-                        if blocks_light(x, y + 1, octant, origin, map) {
+                        if blocks_light(x, y + 1, octant, origin, grid_size, is_tile_opaque) {
                             nx -= 1;
                         }
                         if top.greater(ny, nx) {
@@ -168,7 +328,9 @@ fn compute_visiblity(
                                     x + 1,
                                     top.clone(),
                                     Slope { y: ny, x: nx },
-                                    map,
+                                    grid_size,
+                                    is_tile_opaque,
+                                    mark_tile_visible,
                                 );
                             }
                         } else if y == bottom_y {
@@ -180,7 +342,7 @@ fn compute_visiblity(
                     if was_opaque > 0 {
                         let mut nx = x * 2;
                         let ny = y * 2 + 1;
-                        if blocks_light(x + 1, y + 1, octant, origin, map) {
+                        if blocks_light(x + 1, y + 1, octant, origin, grid_size, is_tile_opaque) {
                             nx += 1;
                         }
                         if bottom.greater_or_equal(ny, nx) {
@@ -197,85 +359,14 @@ fn compute_visiblity(
     was_opaque == 0
 }
 
-fn compute_octant(
+fn set_visible(
+    x: i32,
+    y: i32,
     octant: i32,
     origin: IVec2,
-    range: i32,
-    x: i32,
-    mut top: Slope,
-    mut bottom: Slope,
-    map: &mut VisibilityMap,
+    grid_size: impl GridSize + Copy,
+    mark_tile_visible: &mut impl FnMut(IVec2),
 ) {
-    for x in x..=range {
-        let y_coords = compute_y_coordinate(octant, origin, x, map, &mut top, &mut bottom);
-
-        let top_y = y_coords.x;
-        let bottom_y = y_coords.y;
-
-        if !compute_visiblity(
-            top_y,
-            bottom_y,
-            range,
-            octant,
-            origin,
-            x,
-            map,
-            &mut top,
-            &mut bottom,
-        ) {
-            break;
-        }
-    }
-}
-
-fn compute_y_coordinate(
-    octant: i32,
-    origin: IVec2,
-    x: i32,
-    map: &mut VisibilityMap,
-    top: &mut Slope,
-    bottom: &mut Slope,
-) -> IVec2 {
-    let mut top_y;
-    if top.x == 1 {
-        top_y = x;
-    } else {
-        top_y = ((x * 2 - 1) * top.y + top.x) / (top.x * 2);
-
-        if blocks_light(x, top_y, octant, origin, map) {
-            if top.greater_or_equal(top_y * 2 + 1, x * 2)
-                && !blocks_light(x, top_y + 1, octant, origin, map)
-            {
-                top_y += 1;
-            }
-        } else {
-            let mut ax = x * 2;
-            if blocks_light(x + 1, top_y + 1, octant, origin, map) {
-                ax += 1;
-            }
-            if top.greater(top_y * 2 + 1, ax) {
-                top_y += 1;
-            }
-        }
-    }
-
-    let mut bottom_y;
-    if bottom.y == 0 {
-        bottom_y = 0;
-    } else {
-        bottom_y = ((x * 2 - 1) * bottom.y + bottom.x) / (bottom.x * 2);
-
-        if bottom.greater_or_equal(bottom_y * 2 + 1, x * 2)
-            && blocks_light(x, bottom_y, octant, origin, map)
-            && !blocks_light(x, bottom_y + 1, octant, origin, map)
-        {
-            bottom_y += 1;
-        }
-    }
-    IVec2::new(top_y, bottom_y)
-}
-
-fn blocks_light(x: i32, y: i32, octant: i32, origin: IVec2, map: &mut VisibilityMap) -> bool {
     let (mut nx, mut ny) = origin.into();
     match octant {
         0 => {
@@ -313,52 +404,8 @@ fn blocks_light(x: i32, y: i32, octant: i32, origin: IVec2, map: &mut Visibility
         _ => {}
     }
     let p = IVec2::new(nx, ny);
-    if !map.in_bounds(p) {
-        return true;
-    }
-    map.is_blocker(IVec2::new(nx, ny))
-}
-
-fn set_visible(x: i32, y: i32, octant: i32, origin: IVec2, map: &mut VisibilityMap) {
-    let (mut nx, mut ny) = origin.into();
-    match octant {
-        0 => {
-            nx += x;
-            ny -= y;
-        }
-        1 => {
-            nx += y;
-            ny -= x;
-        }
-        2 => {
-            nx -= y;
-            ny -= x;
-        }
-        3 => {
-            nx -= x;
-            ny -= y;
-        }
-        4 => {
-            nx -= x;
-            ny += y;
-        }
-        5 => {
-            nx -= y;
-            ny += x;
-        }
-        6 => {
-            nx += y;
-            ny += x;
-        }
-        7 => {
-            nx += x;
-            ny += y;
-        }
-        _ => {}
-    }
-    let p = IVec2::new(nx, ny);
-    if map.in_bounds(p) {
-        map.visible.set(p, true);
+    if grid_size.contains_point(p) {
+        mark_tile_visible(p);
     }
 }
 
@@ -387,4 +434,38 @@ impl Slope {
     pub fn less_or_equal(&self, y: i32, x: i32) -> bool {
         self.y * x <= self.x * y
     } // this <= y/x
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn testfov() {
+        #[derive(Clone)]
+        enum Tile {
+            Floor,
+            Wall,
+        }
+        let width = 50;
+        let height = 50;
+        let index = |p: IVec2| p.y as usize * width + p.x as usize;
+
+        let mut game_map = vec![Tile::Floor; width * height];
+        // Add a vision blocker
+        game_map[index(IVec2::new(15, 16))] = Tile::Wall;
+
+        let mut vision = vec![false; width * height];
+
+        let is_opaque = |p| matches!(game_map[index(p)], Tile::Wall);
+        let mark_visible = |p| {
+            let i = index(p);
+            vision[i] = true;
+        };
+
+        compute_fov([15, 15], 5, [width, height], is_opaque, mark_visible);
+
+        let is_visible = |p| vision[index(p)];
+        assert!(!is_visible(IVec2::new(15, 17)));
+        assert!(is_visible(IVec2::new(17, 15)));
+    }
 }

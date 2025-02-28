@@ -2,13 +2,16 @@ use adam_fov_rs::*;
 use bevy::{input::mouse::MouseWheel, prelude::*};
 use bevy_ascii_terminal::*;
 use rand::Rng;
-use sark_grids::SizedGrid;
+use sark_grids::{BitGrid, SizedGrid};
 
 #[derive(Resource)]
-struct ViewRange(i32);
+struct ViewRange(usize);
 
 #[derive(Resource, Deref, DerefMut)]
-pub struct Visibility(VisibilityMap);
+struct Walls(BitGrid);
+
+#[derive(Resource, Deref, DerefMut)]
+pub struct Vision(BitGrid);
 
 fn main() {
     App::new()
@@ -20,7 +23,7 @@ fn main() {
                 toggle_walls,
                 update_view_range,
                 update_vision,
-                update_terminal_from_map.run_if(resource_changed::<Visibility>),
+                update_terminal_from_map.run_if(resource_changed::<Vision>),
             ),
         )
         .run();
@@ -31,24 +34,25 @@ fn setup(mut commands: Commands) {
     commands.spawn(Terminal::new(size));
     commands.spawn(TerminalCamera::new());
 
-    let mut map = Visibility(VisibilityMap::new(size));
-    place_walls(&mut map);
+    let mut map = Walls(BitGrid::new(size));
+    place_walls(&mut map.0);
     commands.insert_resource(map);
 
+    commands.insert_resource(Vision(BitGrid::new(size)));
     commands.insert_resource(ViewRange(5));
 }
 
-fn place_walls(map: &mut VisibilityMap) {
+fn place_walls(walls: &mut BitGrid) {
     let mut rng = rand::thread_rng();
     for _ in 0..100 {
-        let x = rng.gen_range(0..map.width());
-        let y = rng.gen_range(0..map.height());
-        map.add_blocker([x, y]);
+        let x = rng.gen_range(0..walls.width());
+        let y = rng.gen_range(0..walls.height());
+        walls.set([x, y], true); // true == wall
     }
 }
 
 fn toggle_walls(
-    mut map: ResMut<Visibility>,
+    mut map: ResMut<Walls>,
     mouse: Res<ButtonInput<MouseButton>>,
     q_cam: Query<&TerminalCamera>,
     q_term: Query<&TerminalTransform>,
@@ -59,7 +63,7 @@ fn toggle_walls(
                 return;
             };
             if map.in_bounds(p) {
-                map.toggle_blocker(p);
+                map.toggle(p);
             }
         }
     }
@@ -73,34 +77,47 @@ fn update_view_range(mut view_range: ResMut<ViewRange>, mut scroll_event: EventR
             return;
         }
 
-        view_range.0 += delta;
+        view_range.0 = (view_range.0 as i32 + delta).max(1) as usize;
     }
 }
 
 fn update_vision(
-    mut visibility: ResMut<Visibility>,
+    mut vision: ResMut<Vision>,
+    walls: Res<Walls>,
     range: Res<ViewRange>,
     q_cam: Query<&TerminalCamera>,
 ) {
     let cam = q_cam.single();
-    visibility.clear_visibility();
+    vision.set_all(false);
     let Some(cursor) = cam.cursor_world_pos() else {
         return;
     };
-    if visibility.in_bounds(cursor.as_ivec2()) {
-        visibility.compute(cursor.as_ivec2(), range.0);
+    if vision.in_bounds(cursor.as_ivec2()) {
+        let tile_blocks_vision = |p| walls.get(p);
+        let set_visible = |p| vision.set(p, true);
+        compute_fov(
+            cursor.as_ivec2(),
+            range.0,
+            walls.size(),
+            tile_blocks_vision,
+            set_visible,
+        );
     }
 }
 
-fn update_terminal_from_map(map: Res<Visibility>, mut q_term: Query<&mut Terminal>) {
+fn update_terminal_from_map(
+    vision: Res<Vision>,
+    walls: Res<Walls>,
+    mut q_term: Query<&mut Terminal>,
+) {
     let mut term = q_term.single_mut();
 
     term.clear();
 
     for x in 0..term.width() as i32 {
         for y in 0..term.height() as i32 {
-            if map.is_visible([x, y]) {
-                if map.is_blocker([x, y]) {
+            if vision.get([x, y]) {
+                if walls.get([x, y]) {
                     term.put_char([x, y], '#').fg(color::GREEN);
                 } else {
                     term.put_char([x, y], '.').fg(color::WHITE);
