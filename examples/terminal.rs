@@ -54,12 +54,12 @@ fn place_walls(walls: &mut BitGrid) {
 fn toggle_walls(
     mut map: ResMut<Walls>,
     mouse: Res<ButtonInput<MouseButton>>,
-    q_cam: Query<&TerminalCamera>,
-    q_term: Query<&TerminalTransform>,
+    cam: Single<&TerminalCamera>,
+    term: Single<&TerminalTransform>,
 ) {
     if mouse.just_pressed(MouseButton::Left) {
-        if let Some(p) = q_cam.single().cursor_world_pos() {
-            let Some(p) = q_term.single().world_to_tile(p) else {
+        if let Some(p) = cam.cursor_world_pos() {
+            let Some(p) = term.world_to_tile(p) else {
                 return;
             };
             if map.in_bounds(p) {
@@ -69,7 +69,10 @@ fn toggle_walls(
     }
 }
 
-fn update_view_range(mut view_range: ResMut<ViewRange>, mut scroll_event: EventReader<MouseWheel>) {
+fn update_view_range(
+    mut view_range: ResMut<ViewRange>,
+    mut scroll_event: MessageReader<MouseWheel>,
+) {
     for ev in scroll_event.read() {
         let delta = ev.y.round() as i32;
 
@@ -85,9 +88,8 @@ fn update_vision(
     mut vision: ResMut<Vision>,
     walls: Res<Walls>,
     range: Res<ViewRange>,
-    q_cam: Query<&TerminalCamera>,
+    cam: Single<&TerminalCamera>,
 ) {
-    let cam = q_cam.single();
     vision.set_all(false);
     let Some(cursor) = cam.cursor_world_pos() else {
         return;
@@ -108,10 +110,8 @@ fn update_vision(
 fn update_terminal_from_map(
     vision: Res<Vision>,
     walls: Res<Walls>,
-    mut q_term: Query<&mut Terminal>,
+    mut term: Single<&mut Terminal>,
 ) {
-    let mut term = q_term.single_mut();
-
     term.clear();
 
     for x in 0..term.width() as i32 {
