@@ -15,9 +15,9 @@ glam = "0.30.7"
 sark_grids = "0.7.0"
 
 [dev-dependencies]
-bevy_ascii_terminal = "0.18.1"
-rand = "0.8.4"
-bevy = { version = "0.17.3", default-features = false, features = [
+bevy_ascii_terminal = "0.18.2"
+rand = "0.9"
+bevy = { version = "0.18.0", default-features = false, features = [
   "bevy_winit",
   "x11",
 ] }

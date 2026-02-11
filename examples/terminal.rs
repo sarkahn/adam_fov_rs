@@ -43,10 +43,10 @@ fn setup(mut commands: Commands) {
 }
 
 fn place_walls(walls: &mut BitGrid) {
-    let mut rng = rand::thread_rng();
+    let mut rng = rand::rng();
     for _ in 0..100 {
-        let x = rng.gen_range(0..walls.width());
-        let y = rng.gen_range(0..walls.height());
+        let x = rng.random_range(0..walls.width());
+        let y = rng.random_range(0..walls.height());
         walls.set([x, y], true); // true == wall
     }
 }
