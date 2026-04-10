@@ -44,7 +44,7 @@
 //! ![](images/fov.gif)
 
 pub use glam::IVec2;
-pub use sark_grids::{GridPoint, GridSize};
+use glam::UVec2;
 
 /// Compute a field of view into a 2d grid from existing map data.
 ///
@@ -102,13 +102,13 @@ pub use sark_grids::{GridPoint, GridSize};
 /// assert!(is_visible(IVec2::new(17, 15)));
 /// ```
 pub fn compute_fov(
-    origin: impl GridPoint,
+    origin: impl Into<IVec2>,
     range: usize,
-    max_bounds: impl GridSize + Copy, // TODO: Gridsize should implement Copy
+    max_bounds: impl Into<UVec2> + Copy, // TODO: Gridsize should implement Copy
     tile_blocks_vision: impl Fn(IVec2) -> bool,
     mut mark_tile_visible: impl FnMut(IVec2),
 ) {
-    let origin = origin.to_ivec2();
+    let origin = origin.into();
     mark_tile_visible(origin);
 
     for octant in 0..8 {
@@ -134,7 +134,7 @@ fn compute_octant(
     x: i32,
     mut top: Slope,
     mut bottom: Slope,
-    grid_size: impl GridSize + Copy,
+    grid_size: impl Into<UVec2> + Copy,
     is_opaque: &impl Fn(IVec2) -> bool,
     mark_tile_visible: &mut impl FnMut(IVec2),
 ) {
@@ -177,7 +177,7 @@ fn compute_y_coordinate(
     x: i32,
     top: &mut Slope,
     bottom: &mut Slope,
-    grid_size: impl GridSize + Copy,
+    grid_size: impl Into<UVec2> + Copy,
     is_opaque: &impl Fn(IVec2) -> bool,
 ) -> IVec2 {
     let mut top_y;
@@ -224,7 +224,7 @@ fn blocks_light(
     y: i32,
     octant: i32,
     origin: IVec2,
-    grid_size: impl GridSize,
+    grid_size: impl Into<UVec2>,
     is_opaque: &impl Fn(IVec2) -> bool,
 ) -> bool {
     let (mut nx, mut ny) = origin.into();
@@ -264,7 +264,7 @@ fn blocks_light(
         _ => {}
     }
     let p = IVec2::new(nx, ny);
-    if !grid_size.contains_point(p) {
+    if p.cmplt(IVec2::ZERO).any() || p.cmpge(grid_size.into().as_ivec2()).any() {
         return true;
     }
     is_opaque(IVec2::new(nx, ny))
@@ -280,7 +280,7 @@ fn compute_visiblity(
     x: i32,
     top: &mut Slope,
     bottom: &mut Slope,
-    grid_size: impl GridSize + Copy,
+    grid_size: impl Into<UVec2> + Copy,
     is_tile_opaque: &impl Fn(IVec2) -> bool,
     mark_tile_visible: &mut impl FnMut(IVec2),
 ) -> bool {
@@ -364,7 +364,7 @@ fn set_visible(
     y: i32,
     octant: i32,
     origin: IVec2,
-    grid_size: impl GridSize + Copy,
+    grid_size: impl Into<UVec2> + Copy,
     mark_tile_visible: &mut impl FnMut(IVec2),
 ) {
     let (mut nx, mut ny) = origin.into();
@@ -404,7 +404,7 @@ fn set_visible(
         _ => {}
     }
     let p = IVec2::new(nx, ny);
-    if grid_size.contains_point(p) {
+    if p.cmpge(IVec2::ZERO).all() && p.cmplt(grid_size.into().as_ivec2()).all() {
         mark_tile_visible(p);
     }
 }
@@ -462,7 +462,13 @@ mod tests {
             vision[i] = true;
         };
 
-        compute_fov([15, 15], 5, [width, height], is_opaque, mark_visible);
+        compute_fov(
+            [15, 15],
+            5,
+            [width as u32, height as u32],
+            is_opaque,
+            mark_visible,
+        );
 
         let is_visible = |p| vision[index(p)];
         assert!(!is_visible(IVec2::new(15, 17)));

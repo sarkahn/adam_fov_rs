@@ -2,16 +2,28 @@ use adam_fov_rs::*;
 use bevy::{input::mouse::MouseWheel, prelude::*};
 use bevy_ascii_terminal::*;
 use rand::Rng;
-use sark_grids::{BitGrid, SizedGrid};
 
 #[derive(Resource)]
 struct ViewRange(usize);
 
-#[derive(Resource, Deref, DerefMut)]
-struct Walls(BitGrid);
+#[derive(Clone)]
+enum Tile {
+    Floor,
+    Wall,
+}
 
 #[derive(Resource, Deref, DerefMut)]
-pub struct Vision(BitGrid);
+struct Walls(Vec<Tile>);
+
+#[derive(Resource, Deref, DerefMut)]
+pub struct Vision(Vec<bool>);
+
+const WIDTH: usize = 35;
+const HEIGHT: usize = 35;
+
+fn index(p: IVec2) -> usize {
+    p.y as usize * WIDTH + p.x as usize
+}
 
 fn main() {
     App::new()
@@ -30,46 +42,55 @@ fn main() {
 }
 
 fn setup(mut commands: Commands) {
-    let size = [35, 35];
+    let size = UVec2::new(WIDTH as u32, HEIGHT as u32);
     commands.spawn(Terminal::new(size));
     commands.spawn(TerminalCamera::new());
 
-    let mut map = Walls(BitGrid::new(size));
-    place_walls(&mut map.0);
+    let mut map = Walls(vec![Tile::Floor; size.element_product() as usize]);
+    place_walls(map.0.as_mut_slice());
     commands.insert_resource(map);
 
-    commands.insert_resource(Vision(BitGrid::new(size)));
+    commands.insert_resource(Vision(vec![false; size.element_product() as usize]));
     commands.insert_resource(ViewRange(5));
 }
 
-fn place_walls(walls: &mut BitGrid) {
+fn place_walls(walls: &mut [Tile]) {
     let mut rng = rand::thread_rng();
     for _ in 0..100 {
-        let x = rng.gen_range(0..walls.width());
-        let y = rng.gen_range(0..walls.height());
-        walls.set([x, y], true); // true == wall
+        let x = rng.gen_range(0..WIDTH);
+        let y = rng.gen_range(0..HEIGHT);
+        let i = y * WIDTH + x;
+        walls[i] = Tile::Wall;
     }
 }
 
 fn toggle_walls(
     mut map: ResMut<Walls>,
     mouse: Res<ButtonInput<MouseButton>>,
-    q_cam: Query<&TerminalCamera>,
-    q_term: Query<&TerminalTransform>,
+    q_cam: Single<&TerminalCamera>,
+    q_term: Single<&TerminalTransform>,
 ) {
     if mouse.just_pressed(MouseButton::Left) {
-        if let Some(p) = q_cam.single().cursor_world_pos() {
-            let Some(p) = q_term.single().world_to_tile(p) else {
+        if let Some(p) = q_cam.cursor_world_pos() {
+            let Some(p) = q_term.world_to_tile(p) else {
                 return;
             };
-            if map.in_bounds(p) {
-                map.toggle(p);
+            let size = IVec2::new(WIDTH as i32, HEIGHT as i32);
+            let i = p.y as usize * WIDTH + p.x as usize;
+            if p.cmpge(IVec2::ZERO).all() && p.cmplt(size).all() {
+                map.0[i] = match map.0[i] {
+                    Tile::Floor => Tile::Wall,
+                    Tile::Wall => Tile::Floor,
+                };
             }
         }
     }
 }
 
-fn update_view_range(mut view_range: ResMut<ViewRange>, mut scroll_event: EventReader<MouseWheel>) {
+fn update_view_range(
+    mut view_range: ResMut<ViewRange>,
+    mut scroll_event: MessageReader<MouseWheel>,
+) {
     for ev in scroll_event.read() {
         let delta = ev.y.round() as i32;
 
@@ -85,20 +106,21 @@ fn update_vision(
     mut vision: ResMut<Vision>,
     walls: Res<Walls>,
     range: Res<ViewRange>,
-    q_cam: Query<&TerminalCamera>,
+    q_cam: Single<&TerminalCamera>,
 ) {
-    let cam = q_cam.single();
-    vision.set_all(false);
-    let Some(cursor) = cam.cursor_world_pos() else {
+    vision.0.fill(false);
+    let Some(cursor) = q_cam.cursor_world_pos().map(|p| p.as_ivec2()) else {
         return;
     };
-    if vision.in_bounds(cursor.as_ivec2()) {
-        let tile_blocks_vision = |p| walls.get(p);
-        let set_visible = |p| vision.set(p, true);
+    let bounds = IVec2::new(WIDTH as i32, HEIGHT as i32);
+    if cursor.cmpge(IVec2::ZERO).all() && cursor.cmplt(bounds).all() {
+        let tile_blocks_vision = |p| matches!(walls[index(p)], Tile::Wall);
+        let set_visible = |p| vision[index(p)] = true;
+
         compute_fov(
-            cursor.as_ivec2(),
+            cursor,
             range.0,
-            walls.size(),
+            bounds.as_uvec2(),
             tile_blocks_vision,
             set_visible,
         );
@@ -108,20 +130,19 @@ fn update_vision(
 fn update_terminal_from_map(
     vision: Res<Vision>,
     walls: Res<Walls>,
-    mut q_term: Query<&mut Terminal>,
+    mut term: Single<&mut Terminal>,
 ) {
-    let mut term = q_term.single_mut();
-
     term.clear();
 
     for x in 0..term.width() as i32 {
         for y in 0..term.height() as i32 {
-            if vision.get([x, y]) {
-                if walls.get([x, y]) {
-                    term.put_char([x, y], '#').fg(color::GREEN);
-                } else {
-                    term.put_char([x, y], '.').fg(color::WHITE);
-                }
+            let i = y as usize * WIDTH + x as usize;
+            if vision[i] {
+                let (c, col) = match walls[i] {
+                    Tile::Wall => ('#', color::GREEN),
+                    Tile::Floor => ('.', color::WHITE),
+                };
+                term.put_char([x, y], c).fg(col);
             }
         }
     }
