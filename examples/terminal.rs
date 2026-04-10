@@ -42,15 +42,14 @@ fn main() {
 }
 
 fn setup(mut commands: Commands) {
-    let size = UVec2::new(WIDTH as u32, HEIGHT as u32);
-    commands.spawn(Terminal::new(size));
+    commands.spawn(Terminal::new([WIDTH as u32, HEIGHT as u32]));
     commands.spawn(TerminalCamera::new());
 
-    let mut map = Walls(vec![Tile::Floor; size.element_product() as usize]);
+    let mut map = Walls(vec![Tile::Floor; WIDTH * HEIGHT]);
     place_walls(map.0.as_mut_slice());
     commands.insert_resource(map);
 
-    commands.insert_resource(Vision(vec![false; size.element_product() as usize]));
+    commands.insert_resource(Vision(vec![false; WIDTH * HEIGHT]));
     commands.insert_resource(ViewRange(5));
 }
 
@@ -59,7 +58,7 @@ fn place_walls(walls: &mut [Tile]) {
     for _ in 0..100 {
         let x = rng.gen_range(0..WIDTH);
         let y = rng.gen_range(0..HEIGHT);
-        let i = y * WIDTH + x;
+        let i = index(IVec2::new(x as i32, y as i32));
         walls[i] = Tile::Wall;
     }
 }
@@ -76,8 +75,8 @@ fn toggle_walls(
                 return;
             };
             let size = IVec2::new(WIDTH as i32, HEIGHT as i32);
-            let i = p.y as usize * WIDTH + p.x as usize;
             if p.cmpge(IVec2::ZERO).all() && p.cmplt(size).all() {
+                let i = index(p);
                 map.0[i] = match map.0[i] {
                     Tile::Floor => Tile::Wall,
                     Tile::Wall => Tile::Floor,
